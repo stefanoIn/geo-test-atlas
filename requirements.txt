@@ -1,0 +1,12 @@
+numpy
+pandas
+pyarrow
+geopandas
+shapely>=2.1
+pyproj
+rasterio
+scikit-learn
+matplotlib
+SciencePlots
+tqdm
+psutil
