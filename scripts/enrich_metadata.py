@@ -20,6 +20,7 @@ import pyarrow.parquet as pq
 import shapely
 from tqdm.auto import tqdm
 from geography.metadata import iter_centres
+from geography.plotting import plot_category, plot_centres, plot_biome_comparison
 from geography.enrichment import (prepare_resolve, enrich_inventory, compare_repairs,
                                   fingerprint, classified_regions, pending_output)
 
@@ -163,8 +164,6 @@ def _describe(path, out, aggregation_backend='pandas'):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    import scienceplots
-    plt.style.use(['science', 'no-latex'])
     out.mkdir(parents=True, exist_ok=True)
     scope=json.loads(path.with_suffix('.provenance.json').read_text())['signature']['inputs']['scope']
     title=f'{path.stem} ({scope.replace("_", " ")})'
@@ -172,25 +171,12 @@ def _describe(path, out, aggregation_backend='pandas'):
     print(f'Generating category figures for {path.stem}...', flush=True)
     for category, table in tables.items():
         table.to_csv(out/f'{category}_counts.csv', index=False)
-        shown=table.head(20).iloc[::-1]
-        fig,ax=plt.subplots(figsize=(10,max(3,.3*len(shown))))
-        ax.barh(shown[category+'_name'], shown.fraction_all_records, color=shown[category+'_color'])
-        ax.set(xlabel='Fraction of all inventory records', title=f'{title}: {category} composition'+(' (top 20)' if len(table)>20 else ''))
-        fig.tight_layout()
-        fig.savefig(out/f'{category}_distribution.pdf',bbox_inches='tight')
-        plt.close(fig)
+        plot_category(table, category, title, out)
     print(f'Generating sampled-centre figure for {path.stem}...', flush=True)
     points=pd.concat(centres,ignore_index=True)
     if len(points)>10000:
         points=points.sample(10000,random_state=42)
-    finite=np.isfinite(points.center_lon)&np.isfinite(points.center_lat)
-    colours=points.biome_color.fillna('#999999').copy()
-    colours.loc[points.assignment_status == 'unclassified'] = '#999999'
-    fig,ax=plt.subplots(figsize=(10,5))
-    ax.scatter(points.loc[finite,'center_lon'],points.loc[finite,'center_lat'],s=3,c=colours[finite],alpha=.6,rasterized=True)
-    ax.set(xlim=(-180,180),ylim=(-90,90),xlabel='Longitude',ylabel='Latitude',
-           title=f'{title}: sampled centres ({len(points):,}); colour denotes biome')
-    ax.grid(alpha=.2);fig.tight_layout();fig.savefig(out/'centres.pdf');plt.close(fig)
+    plot_centres(points, title, out)
     summary['plot_records']=len(points)
     (out/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
     return tables['biome']
@@ -211,7 +197,7 @@ def describe(path, out, aggregation_backend='pandas', *, figures_dir=None):
             # The summary is the completion marker and is published last.
             (out / 'summary.json').unlink(missing_ok=True)
             for file in sorted(staging.iterdir(), key=lambda p: p.name == 'summary.json'):
-                destination = figures_dir if file.suffix == '.pdf' else out
+                destination = figures_dir if file.suffix in {'.pdf', '.png'} else out
                 file.replace(destination / file.name)
             return result
         finally:
@@ -290,13 +276,7 @@ def main():
     import matplotlib.pyplot as plt
     print('Generating inventory comparison figure...', flush=True)
     combined=pd.concat(all_biomes,ignore_index=True)
-    distribution=combined.pivot(index='biome_name',columns='inventory',values='fraction_all_records').fillna(0)
-    fig,ax=plt.subplots(figsize=(10,max(4,.4*len(distribution))))
-    distribution.plot.barh(ax=ax);ax.set(xlabel='Fraction of all records',ylabel='',title='Centre-based biome composition (subset scope where indicated)')
-    fig.tight_layout()
-    with pending_output(figures_dir/'biome_comparison.pdf') as pending:
-        fig.savefig(pending,bbox_inches='tight')
-    plt.close(fig)
+    plot_biome_comparison(combined, figures_dir/'biome_comparison.pdf')
     if args.report_only:
         print(f'Reports completed in {time.perf_counter()-start:.1f}s', flush=True)
         return

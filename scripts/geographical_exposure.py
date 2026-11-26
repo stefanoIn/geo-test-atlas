@@ -30,6 +30,7 @@ from shapely.ops import transform, unary_union
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from geography.metadata import load_metadata, load_downstream
+from geography.plotting import scientific_style, save_figure, plot_exposure_summary
 from geography.exposure import (projection, metric_polygon, footprint, enclosing_radii,
                                 coverage, analyse)
 
@@ -42,13 +43,14 @@ LABELS = {"croma_ssl4eo": "CROMA — SSL4EO original",
           "terramind_majortom": "TerraMind — MajorTOM", "terramind": "TerraMind union"}
 
 
-def plot_results(summary, maps, state, out, view_km):
+@scientific_style()
+def plot_results(summary, maps, state, out, view_km, *, show_titles=True,
+                 figsize=(7.2, 3.6), legend_loc='lower left', legend_ncol=1):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Polygon as Patch, Patch as Legend
-    plt.rcParams.update({"font.size": 10, "axes.spines.top": False, "axes.spines.right": False})
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=figsize, sharex=True, sharey=True)
     for ax, model, sources in zip(axes, ["croma_ssl4eo", "terramind"],
                                   [["croma_ssl4eo"], ["terramind_ssl4eo", "terramind_majortom"]]):
         for source, geom, hit in maps.values():
@@ -62,28 +64,18 @@ def plot_results(summary, maps, state, out, view_km):
         ax.set_title(f"{LABELS[model]}{qualifier}\nCoverage {row.coverage_fraction:.1%} · nearest {row.nearest_footprint_km:.3f} km", fontsize=10)
         ax.set(xlim=(-view_km, view_km), ylim=(-view_km, view_km), xlabel="East of chip centre (km)", aspect="equal")
         ax.grid(alpha=.15)
-        ax.legend(handles=[Legend(facecolor=COLORS[s], alpha=.5, label=LABELS[s]) for s in sources], loc="lower left", fontsize=8)
+        ax.legend(handles=[Legend(facecolor=COLORS[s], alpha=.5, label=LABELS[s]) for s in sources], loc=legend_loc, ncol=legend_ncol)
     axes[0].set_ylabel("North of chip centre (km)")
     fig.suptitle(f"Geographical pretraining exposure · {state['chip'].sample_id}\nBlack: downstream footprint; stronger outlines: positive-area intersections", fontsize=12)
+    if not show_titles:
+        fig.suptitle("")
+        for ax in axes:
+            ax.set_title("")
     fig.tight_layout()
-    fig.savefig(out/"local_exposure.png", dpi=180)
+    save_figure(fig, out/"local_exposure.png")
     plt.close(fig)
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    for source, group in summary.groupby("pretraining_inventory", sort=False):
-        x = np.sort(group.nearest_footprint_km.to_numpy())
-        axes[1].plot(x, np.arange(1,len(x)+1)/len(x), drawstyle="steps-post", marker="o", markersize=4,
-                     label=LABELS[source], color=COLORS.get(source,"#555555"))
-    grouped = summary.groupby("pretraining_inventory", sort=False).coverage_fraction.mean()
-    axes[0].bar(range(len(grouped)), grouped.values*100, color=[COLORS.get(s,"#555555") for s in grouped.index])
-    axes[0].set_xticks(range(len(grouped)), [LABELS[s] for s in grouped.index], rotation=25, ha="right", fontsize=8)
-    axes[0].set_ylabel("Mean downstream coverage (%)")
-    axes[0].set_ylim(0, 100)
-    axes[1].set(xlabel="Nearest footprint distance (km)", ylabel="Fraction of analysed chips", ylim=(0,1.05))
-    axes[1].legend(fontsize=7)
-    fig.suptitle(f"Metadata exposure · {summary.chip_id.nunique()} downstream chips · CROMA footprints approximate\nGeographical exposure is not evidence of label leakage", fontsize=11)
-    fig.tight_layout()
-    fig.savefig(out/"exposure_summary.png", dpi=180)
-    plt.close(fig)
+    plot_exposure_summary(summary, out, show_titles=show_titles,
+                          legend_loc=legend_loc, legend_ncol=legend_ncol)
 
 
 def self_test():
