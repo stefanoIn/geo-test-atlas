@@ -211,3 +211,168 @@ def plot_exposure_summary(summary, out, *, show_titles=True, figsize=(9, 3.2),
     plt.close(fig)
 
 
+
+
+@scientific_style()
+def plot_event_exposure(tables, output, *, inventories, event_order=None, figsize=(11, 5)):
+    """Three coordinated event panels using saved union coverage and chip distances."""
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+    summary = tables["event_exposure_summary"]
+    chips = tables["chip_level_characterisation"]
+    events = list(event_order or sorted(summary.event.unique()))
+    palette = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    fig, axes = plt.subplots(1, 3, figsize=figsize, sharey=True)
+    y = np.arange(len(events))
+    width = .72 / len(inventories)
+    counts = chips.drop_duplicates("chip_id").groupby("event").size()
+    for i, (inventory, label) in enumerate(inventories.items()):
+        colour = palette[i % len(palette)]
+        selected = summary[summary.pretraining_inventory.eq(inventory)].set_index("event").reindex(events)
+        positions = y + (i - (len(inventories)-1)/2) * width
+        axes[0].barh(positions, selected.coverage_fraction_mean * 100, height=width, color=colour)
+        axes[1].barh(positions, selected.positive_overlap_fraction * 100, height=width, color=colour)
+        distances = [chips.loc[chips.pretraining_inventory.eq(inventory) & chips.event.eq(e),
+                               "nearest_footprint_km"].dropna().to_numpy() for e in events]
+        boxes = axes[2].boxplot(distances, positions=positions, vert=False, widths=width*.8,
+                               patch_artist=True, manage_ticks=False)
+        for box in boxes["boxes"]:
+            box.set_facecolor(colour)
+        for element in ("whiskers", "caps", "medians"):
+            for line in boxes[element]:
+                line.set_color("black")
+    for ax, title, xlabel in zip(axes, ("(a) Mean footprint coverage", "(b) Positive-area overlap",
+                                      "(c) Nearest-footprint distance"),
+                                 ("Coverage (%)", "Chips (%)", "Distance (km)")):
+        ax.set_title(title)
+        ax.set_xlabel(xlabel)
+        ax.minorticks_off()
+        ax.grid(False, axis="y")
+        ax.grid(True, axis="x", which="major")
+        ax.tick_params(axis="y", left=False, right=False)
+        ax.tick_params(axis="x", top=False)
+        ax.set_yticks(y, [f"{e} (n={counts[e]})" for e in events])
+    axes[0].invert_yaxis()
+    axes[0].set_xlim(0, 100)
+    axes[1].set_xlim(0, 100)
+    axes[2].set_xlim(left=0)
+    fig.legend([Patch(facecolor=palette[i % len(palette)]) for i in range(len(inventories))],
+               list(inventories.values()), loc="lower center", ncol=len(inventories), frameon=False)
+    compact_legend_layout(fig)
+    save_figure(fig, Path(output)/"geographical_exposure_by_event", bbox_inches="tight")
+    plt.close(fig)
+
+
+@scientific_style()
+def plot_event_proximity(tables, output, *, inventories, event_order=None,
+                         radii=(5, 10, 25, 50, 100), log1p=True, figsize=(9, 5)):
+    """Shared heatmap scale; hatched cells indicate missing values, not zero."""
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Rectangle
+    table = tables["event_proximity_summary"]
+    events = list(event_order or sorted(table.event.unique()))
+    matrices = [table[table.pretraining_inventory.eq(key)].pivot(
+        index="event", columns="radius_km", values="unique_centres_mean").reindex(
+            index=events, columns=radii).to_numpy() for key in inventories]
+    values = [np.log1p(m) if log1p else m for m in matrices]
+    finite = np.concatenate([m[np.isfinite(m)] for m in values])
+    norm = Normalize(0, max(float(finite.max()), 1e-12) if len(finite) else 1)
+    fig, axes = plt.subplots(1, len(inventories), figsize=figsize, sharey=True, squeeze=False)
+    for i, (ax, label, matrix) in enumerate(zip(axes[0], inventories.values(), values)):
+        mesh = ax.pcolormesh(np.ma.masked_invalid(matrix), cmap="viridis", norm=norm, shading="flat")
+        for row, col in zip(*np.where(~np.isfinite(matrix))):
+            ax.add_patch(Rectangle((col, row), 1, 1, fill=False, hatch="///"))
+        ax.set(xticks=np.arange(len(radii))+.5, xticklabels=radii,
+               yticks=np.arange(len(events))+.5, yticklabels=events,
+               xlabel="Centre-to-centre radius (km)", title=f"({chr(97+i)}) {label}")
+        ax.set_ylim(len(events), 0)
+        ax.minorticks_off()
+        ax.grid(False)
+        ax.tick_params(which="both", top=False, right=False, length=0)
+    compact_legend_layout(fig)
+    fig.colorbar(mesh, ax=list(axes[0]), pad=.025, fraction=.035,
+                 label=("log1p(mean distinct centres per chip)" if log1p else "Mean distinct centres per chip"))
+    save_figure(fig, Path(output)/"multiscale_geographical_proximity", bbox_inches="tight")
+    plt.close(fig)
+
+
+@scientific_style()
+def plot_event_ecology(tables, output, *, inventory_labels, event_order=None,
+                       top_ecoregions=8, figsize=(12, 7), legend_ncol=3):
+    """Event biome composition, full-denominator comparison and downstream-ranked ecoregions."""
+    import textwrap
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch, Rectangle
+    from matplotlib.colors import Normalize
+    if top_ecoregions < 1:
+        raise ValueError("top_ecoregions must be positive")
+    composition = tables["event_biome_composition"]
+    rep = tables["ecological_inventory_representation"]
+    biome = rep[rep.category.eq("biome")]
+    events = list(event_order or sorted(composition.event.unique()))
+    identities = biome[["category_name", "category_color"]].drop_duplicates("category_name")
+    names = identities.category_name.tolist()
+    colours = dict(zip(identities.category_name, identities.category_color))
+    # Neutral hatching is reserved for residual/unresolved mass, not an ecological colour.
+    residual = {"Other assigned categories": "//", "Unresolved assignments": ".."}
+    fig, axes = plt.subplots(1, 3, figsize=figsize, gridspec_kw={"width_ratios": [1.15, 1, 1.6]})
+    event_values = composition.assign(
+        category_name=composition.category_name.where(composition.category_id.notna(), "Unresolved assignments")
+    ).groupby(["event", "category_name"]).fraction_all_event_chips.sum().unstack(fill_value=0).reindex(events)
+    for ax, labels, data in (
+        (axes[0], events, event_values),
+        (axes[1], list(inventory_labels.values()), biome.pivot(
+            index="inventory", columns="category_name", values="fraction_all_records").reindex(inventory_labels)),
+    ):
+        left = np.zeros(len(labels))
+        for name in names:
+            values = data[name].to_numpy() if name in data else np.zeros(len(labels))
+            ax.barh(np.arange(len(labels)), values*100, left=left*100, height=.65,
+                    color=colours[name] if pd.notna(colours[name]) else "white",
+                    edgecolor="black" if name in residual else "none", hatch=residual.get(name))
+            left += values
+        ax.set(yticks=np.arange(len(labels)), yticklabels=labels, xlim=(0,100), xlabel="All records (%)")
+        ax.invert_yaxis()
+        ax.minorticks_off()
+        ax.grid(False, axis="y")
+        ax.grid(True, axis="x", which="major")
+        ax.tick_params(axis="y", left=False, right=False)
+        ax.tick_params(axis="x", top=False)
+    axes[0].set_xlabel("All event chips (%)")
+    axes[0].set_title("(a) Event biome composition")
+    axes[1].set_title("(b) Biome representation")
+    eco = rep[rep.category.eq("ecoregion") & rep.category_id.notna()]
+    ranked = eco[eco.inventory.eq("downstream")].sort_values(
+        ["records", "category_id"], ascending=[False, True]).head(top_ecoregions)
+    matrix = eco.pivot(index="category_id", columns="inventory", values="fraction_all_records").reindex(
+        index=ranked.category_id, columns=inventory_labels).to_numpy()*100
+    ax = axes[2]
+    if not len(ranked):
+        raise ValueError("No assigned downstream ecoregions available for the ecological figure")
+    mesh = ax.pcolormesh(np.ma.masked_invalid(matrix), cmap="viridis",
+                        norm=Normalize(0, max(np.nanmax(matrix), 1e-12)), shading="flat")
+    for row, col in zip(*np.where(~np.isfinite(matrix))):
+        ax.add_patch(Rectangle((col, row), 1, 1, fill=False, hatch="///"))
+    labels = [textwrap.fill(str(row.category_name), 25) + "\n" +
+              textwrap.fill(str(row.events), 25) for row in ranked.itertuples()]
+    ax.set(xticks=np.arange(len(inventory_labels))+.5, xticklabels=list(inventory_labels.values()),
+           yticks=np.arange(len(labels))+.5, yticklabels=labels, title="(c) Ecoregion representation")
+    ax.invert_yaxis()
+    ax.minorticks_off()
+    ax.grid(False)
+    ax.tick_params(which="both", top=False, right=False, length=0)
+    handles = [Patch(facecolor=colours[n] if pd.notna(colours[n]) else "white",
+                     edgecolor="black" if n in residual else "none", hatch=residual.get(n)) for n in names]
+    fig.legend(handles, [textwrap.fill(n, 38) for n in names], loc="lower center",
+               ncol=legend_ncol, frameon=False)
+    compact_legend_layout(fig, w_pad=2)
+    fig.colorbar(mesh, ax=ax, pad=.025, fraction=.04, label="All inventory records (%)")
+    # The colour bar preserves vertical bounds; the shared legend remains below the labels.
+    fig.canvas.draw()
+    save_figure(fig, Path(output)/"ecological_composition_and_representation", bbox_inches="tight")
+    plt.close(fig)
