@@ -15,8 +15,8 @@ def main():
     parser.add_argument("--enrichment", type=Path, help="Enrichment output directory")
     parser.add_argument("--exposure", type=Path, help="Existing exposure_summary.csv")
     parser.add_argument("--no-titles", action="store_true")
-    parser.add_argument("--legend-loc", default="best")
-    parser.add_argument("--legend-columns", type=int, default=1)
+    parser.add_argument("--legend-loc", default="upper center")
+    parser.add_argument("--legend-columns", type=int, default=3)
     args = parser.parse_args()
     if args.enrichment is None and args.exposure is None:
         parser.error("Specify --enrichment and/or --exposure")
@@ -31,17 +31,18 @@ def main():
             scope = "scope not recorded"
             if manifest.is_file():
                 scope = json.loads(manifest.read_text(encoding="utf-8"))["signature"]["inputs"]["scope"].replace("_", " ")
-            title = f"{folder.name}_enriched ({scope})"
+            display_name = "Sen1Floods11" if folder.name in {"stac", "sen1floods11"} else folder.name
+            title = f"{display_name} ({scope})"
             for category in ("biome", "ecoregion"):
                 path = folder / f"{category}_counts.csv"
                 if not path.is_file():
                     continue
                 table = pd.read_csv(path)
                 plot_category(table, category, title,
-                              args.enrichment / "figures" / folder.name,
+                              args.enrichment / "figures" / ("sen1floods11" if folder.name == "stac" else folder.name),
                               show_titles=not args.no_titles)
                 if category == "biome":
-                    table["inventory"] = folder.name
+                    table["inventory"] = display_name
                     biomes.append(table)
         if biomes:
             plot_biome_comparison(pd.concat(biomes, ignore_index=True),

@@ -47,7 +47,7 @@ performed; exact +/-180-degree boundary matches can depend on representation.
 Run bounded validation from the repository directory:
 
 ```powershell
-python scripts/enrich_metadata.py --resolve-source data/environmental/resolve_2017/Ecoregions2017.shp --validated outputs/enrichment/validation/resolve_2017_validated.parquet --inventory ssl4eo=data/inventories/SSL4EO-S12/ssl4eo-s12_center_coords.csv --inventory terramesh=data/inventories/TerraMesh/train_metadata.parquet --inventory stac=../GeoTest/data/sen1floods11/catalog/sen1floods11_hand_labeled_label/collection.json --output-dir outputs/enrichment_subsets --sample-records 1024 --batch-size 256
+python scripts/enrich_metadata.py --resolve-source data/environmental/resolve_2017/Ecoregions2017.shp --validated outputs/enrichment/validation/resolve_2017_validated.parquet --inventory ssl4eo=data/inventories/SSL4EO-S12/ssl4eo-s12_center_coords.csv --inventory terramesh=data/inventories/TerraMesh/train_metadata.parquet --inventory sen1floods11=../GeoTest/data/sen1floods11/catalog/sen1floods11_hand_labeled_label/collection.json --output-dir outputs/enrichment_subsets --sample-records 1024 --batch-size 256
 python -m unittest tests.test_geography -v
 ```
 

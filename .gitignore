@@ -8,3 +8,5 @@ data/inventories/**/*.csv
 data/inventories/**/*.parquet
 *.pending.*
 .DS_Store
+
+/reports/trace

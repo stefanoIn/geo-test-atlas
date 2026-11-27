@@ -80,7 +80,7 @@ Default Sen1Floods11 paths point to `../GeoTest/data/sen1floods11/` solely as an
 external data location. No GeoTest code is imported. Use other locations explicitly:
 
 ```powershell
-python -u scripts/enrich_metadata.py --full --dataset stac --inventory "stac=../GeoTest/data/sen1floods11/catalog/sen1floods11_hand_labeled_label/collection.json"
+python -u scripts/enrich_metadata.py --full --dataset sen1floods11 --inventory "sen1floods11=../GeoTest/data/sen1floods11/catalog/sen1floods11_hand_labeled_label/collection.json"
 
 python -u scripts/geographical_exposure.py --chip Ghana_313799 --map-chip Ghana_313799 --view-km 25 --catalog ../GeoTest/data/sen1floods11/catalog/sen1floods11_hand_labeled_label/collection.json --splits-dir ../GeoTest/data/sen1floods11/splits/all_hand_labels --raster-dir ../GeoTest/data/sen1floods11/HandLabeled/LabelHand
 

@@ -36,8 +36,9 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--resolve-source', type=Path, default=Path('data/environmental/resolve_2017/Ecoregions2017.shp'))
     parser.add_argument('--validated', type=Path, default=Path('outputs/enrichment/validation/resolve_2017_validated.parquet'))
-    parser.add_argument('--dataset', choices=list(DEFAULT_INVENTORIES), nargs='+',
-                        help='Inventories to process (default: all; stac is Sen1Floods11).')
+    parser.add_argument('--dataset', choices=list(DEFAULT_INVENTORIES) + ['sen1floods11'], nargs='+',
+                        metavar='{ssl4eo,terramesh,sen1floods11}',
+                        help='Inventories to process (default: all). The legacy stac alias is accepted.')
     parser.add_argument('--inventory', action='append', metavar='KIND=PATH',
                         help='Override inventory paths. Without --dataset, process only these overrides.')
     parser.add_argument('--output-dir', type=Path, help='Ecological output root: enriched/, validation/, statistics/ and figures/.')
@@ -51,11 +52,14 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.sample_records <= 0 or args.batch_size <= 0:
         parser.error('Sample and batch sizes must be positive')
+    if args.dataset:
+        args.dataset = ['stac' if kind == 'sen1floods11' else kind for kind in args.dataset]
     overrides = {}
     for spec in args.inventory or []:
         kind, separator, path = spec.partition('=')
+        kind = 'stac' if kind == 'sen1floods11' else kind
         if not separator or not path or kind not in DEFAULT_INVENTORIES:
-            parser.error('--inventory must be ssl4eo=PATH, terramesh=PATH or stac=PATH')
+            parser.error('--inventory must be ssl4eo=PATH, terramesh=PATH or sen1floods11=PATH')
         if kind in overrides:
             parser.error(f'Duplicate inventory override: {kind}')
         overrides[kind] = Path(path)
@@ -233,7 +237,7 @@ def main():
             print(f'Checking completed output fingerprint: {output}', flush=True)
             if json.loads(manifest.read_text()).get('output_fingerprint') != fingerprint(output):
                 raise ValueError(f'Enriched output does not match its provenance: {output}')
-            table = describe(output, args.output_dir/'statistics'/kind, args.aggregation_backend, figures_dir=figures_dir/kind)
+            table = describe(output, args.output_dir/'statistics'/kind, args.aggregation_backend, figures_dir=figures_dir/('sen1floods11' if kind == 'stac' else kind))
             table['inventory'] = kind
             all_biomes.append(table)
             continue
@@ -271,7 +275,7 @@ def main():
         info['repair_bbox_candidate_records']=candidate_count
         info['source_counts_in_subset']=sample.source.value_counts().to_dict()
         report[kind]=info
-        table=describe(output,args.output_dir/'statistics'/kind,args.aggregation_backend, figures_dir=figures_dir/kind);table['inventory']=kind;all_biomes.append(table)
+        table=describe(output,args.output_dir/'statistics'/kind,args.aggregation_backend, figures_dir=figures_dir/('sen1floods11' if kind == 'stac' else kind));table['inventory']=kind;all_biomes.append(table)
         print(kind,info['comparison_counts'],info['assignment_status_counts'],flush=True)
     import matplotlib.pyplot as plt
     print('Generating inventory comparison figure...', flush=True)

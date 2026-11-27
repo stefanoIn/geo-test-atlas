@@ -30,7 +30,7 @@ from shapely.ops import transform, unary_union
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from geography.metadata import load_metadata, load_downstream
-from geography.plotting import scientific_style, save_figure, plot_exposure_summary
+from geography.plotting import scientific_style, save_figure, plot_exposure_summary, compact_legend_layout
 from geography.exposure import (projection, metric_polygon, footprint, enclosing_radii,
                                 coverage, analyse)
 
@@ -45,34 +45,44 @@ LABELS = {"croma_ssl4eo": "CROMA — SSL4EO original",
 
 @scientific_style()
 def plot_results(summary, maps, state, out, view_km, *, show_titles=True,
-                 figsize=(7.2, 3.6), legend_loc='lower left', legend_ncol=1):
+                 figsize=(9, 4), legend_loc='upper center', legend_ncol=2):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Polygon as Patch, Patch as Legend
     fig, axes = plt.subplots(1, 2, figsize=figsize, sharex=True, sharey=True)
-    for ax, model, sources in zip(axes, ["croma_ssl4eo", "terramind"],
-                                  [["croma_ssl4eo"], ["terramind_ssl4eo", "terramind_majortom"]]):
+    legend_handles = []
+    for panel, (ax, model, sources) in enumerate(zip(axes, ["croma_ssl4eo", "terramind"],
+                                  [["croma_ssl4eo"], ["terramind_ssl4eo", "terramind_majortom"]])):
+        precision = summary[summary.chip_id == state["chip"].sample_id].set_index("pretraining_inventory").footprint_precision
         for source, geom, hit in maps.values():
             if source not in sources:
                 continue
             ax.add_patch(Patch(np.asarray(geom.exterior.coords)/1000, facecolor=COLORS[source],
-                              edgecolor=COLORS[source], alpha=.32 if hit else .12, lw=1.3 if hit else .5))
+                              edgecolor=COLORS[source], alpha=.25 if hit else .10,
+                              lw=.9 if hit else .5,
+                              linestyle="--" if precision[source] == "approximate" else "-"))
         ax.add_patch(Patch(np.asarray(state["target"].exterior.coords)/1000, fill=False, edgecolor="black", lw=2.5))
         row = summary[(summary.chip_id == state["chip"].sample_id) & (summary.pretraining_inventory == model)].iloc[0]
-        qualifier = " (approximate footprints)" if model == "croma_ssl4eo" else " (supplied footprints)"
-        ax.set_title(f"{LABELS[model]}{qualifier}\nCoverage {row.coverage_fraction:.1%} · nearest {row.nearest_footprint_km:.3f} km", fontsize=10)
+        if show_titles:
+            ax.set_title(f"({chr(97 + panel)}) {LABELS[model]}\n"
+                         f"Coverage {row.coverage_fraction:.1%} · nearest {row.nearest_footprint_km:.3f} km")
         ax.set(xlim=(-view_km, view_km), ylim=(-view_km, view_km), xlabel="East of chip centre (km)", aspect="equal")
-        ax.grid(alpha=.15)
-        ax.legend(handles=[Legend(facecolor=COLORS[s], alpha=.5, label=LABELS[s]) for s in sources], loc=legend_loc, ncol=legend_ncol)
+        ax.minorticks_off()
+        ax.grid(True, which="major")
+        ax.grid(False, which="minor")
+        legend_handles.extend(
+            Legend(facecolor=COLORS[s], edgecolor=COLORS[s], alpha=.5,
+                   linestyle="--" if precision[s] == "approximate" else "-",
+                   label=LABELS[s] + (" (approximate)" if precision[s] == "approximate" else ""))
+            for s in sources)
     axes[0].set_ylabel("North of chip centre (km)")
-    fig.suptitle(f"Geographical pretraining exposure · {state['chip'].sample_id}\nBlack: downstream footprint; stronger outlines: positive-area intersections", fontsize=12)
-    if not show_titles:
-        fig.suptitle("")
-        for ax in axes:
-            ax.set_title("")
-    fig.tight_layout()
-    save_figure(fig, out/"local_exposure.png")
+    legend_handles.append(Legend(facecolor="none", edgecolor="black", linewidth=2.5,
+                                 label="Downstream footprint"))
+    fig.legend(handles=legend_handles, loc=legend_loc, bbox_to_anchor=(.5, 0),
+               ncol=max(1, min(legend_ncol, len(legend_handles))), frameon=False)
+    compact_legend_layout(fig)
+    save_figure(fig, out/"local_exposure.png", bbox_inches="tight")
     plt.close(fig)
     plot_exposure_summary(summary, out, show_titles=show_titles,
                           legend_loc=legend_loc, legend_ncol=legend_ncol)

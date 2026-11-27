@@ -95,10 +95,10 @@ Select individual inventories, or multiple names after `--dataset`:
 ```powershell
 python -u scripts/enrich_metadata.py --full --dataset ssl4eo
 python -u scripts/enrich_metadata.py --full --dataset terramesh
-python -u scripts/enrich_metadata.py --full --dataset stac
+python -u scripts/enrich_metadata.py --full --dataset sen1floods11
 ```
 
-`stac` is the downstream Sen1Floods11 catalogue. The default TerraMesh inventory
+`sen1floods11` selects the downstream catalogue (STAC format); `stac` remains a legacy alias. The default TerraMesh inventory
 is training metadata, not validation metadata. Full runs still compare original
 and repaired assignments on bounded diagnostic subsets (default 4,096 records,
 except STAC). `--sample-records` controls that diagnostic, not the full inventory.
@@ -157,7 +157,7 @@ The existing downstream adapter still requires Sen1Floods11 naming conventions.
 | exposure | `--view-km 25` | Local map half-width; does not limit nearest search |
 | exposure | `--batch-size 65536` | Inventory read batch size |
 | exposure | `--output PATH` | Exposure output destination |
-| enrichment | `--inventory KIND=PATH` | Override ssl4eo, terramesh or stac input; repeatable |
+| enrichment | `--inventory KIND=PATH` | Override ssl4eo, terramesh or sen1floods11 input; repeatable |
 | enrichment | `--resolve-source PATH` | Original RESOLVE shapefile |
 | enrichment | `--validated PATH` | Validated RESOLVE cache location |
 | enrichment | `--output-dir PATH` | Ecological output destination |
@@ -168,7 +168,7 @@ Without `--dataset`, explicit `--inventory` arguments select only those inventor
 For example:
 
 ```powershell
-python -u scripts/enrich_metadata.py --full --inventory "stac=../GeoTest/data/sen1floods11/catalog/sen1floods11_hand_labeled_label/collection.json" --output-dir outputs/custom_enrichment
+python -u scripts/enrich_metadata.py --full --inventory "sen1floods11=../GeoTest/data/sen1floods11/catalog/sen1floods11_hand_labeled_label/collection.json" --output-dir outputs/custom_enrichment
 ```
 
 ## 7. Tests and optional assignment benchmark
