@@ -229,36 +229,45 @@ def main():
     all_biomes=[];report={}
     for spec in args.inventory:
         kind,source=spec.split('=',1);source=Path(source)
+        dataset = 'sen1floods11' if kind == 'stac' else kind
+        output = enriched_dir/f'{dataset}_enriched.parquet'
+        # Read legacy cache names without changing their data or provenance.
+        if dataset == 'sen1floods11' and not output.exists():
+            legacy = enriched_dir/'stac_enriched.parquet'
+            if legacy.is_file() and legacy.with_suffix('.provenance.json').is_file():
+                output = legacy
         if args.report_only:
-            output = enriched_dir/f'{kind}_enriched.parquet'
             manifest = output.with_suffix('.provenance.json')
             if not output.is_file() or not manifest.is_file():
                 raise FileNotFoundError(f'Completed enrichment and provenance required: {output}')
             print(f'Checking completed output fingerprint: {output}', flush=True)
-            if json.loads(manifest.read_text()).get('output_fingerprint') != fingerprint(output):
+            recorded = json.loads(manifest.read_text()).get('output_fingerprint')
+            current = fingerprint(output)
+            # A single Parquet may be renamed without changing its recorded contents.
+            if (not isinstance(recorded, dict) or len(recorded) != 1 or
+                    list(recorded.values()) != list(current.values())):
                 raise ValueError(f'Enriched output does not match its provenance: {output}')
-            table = describe(output, args.output_dir/'statistics'/kind, args.aggregation_backend, figures_dir=figures_dir/('sen1floods11' if kind == 'stac' else kind))
-            table['inventory'] = kind
+            table = describe(output, args.output_dir/'statistics'/dataset, args.aggregation_backend, figures_dir=figures_dir/dataset)
+            table['inventory'] = dataset
             all_biomes.append(table)
             continue
-        print(f'Validating {kind}: {source}',flush=True)
+        print(f'Validating {dataset}: {source}',flush=True)
         sample=representative_centres(kind,source,args.sample_records)
         comparison=compare_repairs(sample,original,regions)
-        with pending_output(validation_dir/f'{kind}_repair_comparison.parquet') as pending:
+        with pending_output(validation_dir/f'{dataset}_repair_comparison.parquet') as pending:
             comparison.to_parquet(pending,compression='zstd',index=False)
-        with pending_output(validation_dir/f'{kind}_assignment_discrepancies.csv') as pending:
+        with pending_output(validation_dir/f'{dataset}_assignment_discrepancies.csv') as pending:
             comparison[comparison.comparison_status!='unchanged'].to_csv(pending,index=False)
         invalid_tree=shapely.STRtree(original.loc[~original.is_valid].geometry)
         points=shapely.points(sample.center_lon,sample.center_lat)
         candidate_count=len(np.unique(invalid_tree.query(points)[0]))
-        print(f'Checking source fingerprints for {kind}...', flush=True)
+        print(f'Checking source fingerprints for {dataset}...', flush=True)
         provenance=dict(source=fingerprint(source),kind=kind,
             centre_method='existing inventory coordinates; STAC explicit centre or planar WGS84 footprint centroid',
             scope='full' if args.full or kind=='stac' else 'validation_subset',
             sample_records=args.sample_records if not args.full else None,
             sampling='all STAC items; SSL4EO fixed-seed random sample; TerraMesh evenly selected row-group prefixes',
             record_identity='source fingerprint plus source_row; original sample_id and tar/source_item retained')
-        output=enriched_dir/f'{kind}_enriched.parquet'
         info=enrich_inventory(iter_centres(kind,source,args.batch_size) if args.full else
                               (sample.iloc[i:i+args.batch_size] for i in range(0,len(sample),args.batch_size)),
                               args.validated,output,provenance, total_records=(len(sample) if not args.full else
@@ -274,9 +283,9 @@ def main():
         info['sample_id_duplicates_in_subset']=int(sample.sample_id.duplicated().sum())
         info['repair_bbox_candidate_records']=candidate_count
         info['source_counts_in_subset']=sample.source.value_counts().to_dict()
-        report[kind]=info
-        table=describe(output,args.output_dir/'statistics'/kind,args.aggregation_backend, figures_dir=figures_dir/('sen1floods11' if kind == 'stac' else kind));table['inventory']=kind;all_biomes.append(table)
-        print(kind,info['comparison_counts'],info['assignment_status_counts'],flush=True)
+        report[dataset]=info
+        table=describe(output,args.output_dir/'statistics'/dataset,args.aggregation_backend, figures_dir=figures_dir/dataset);table['inventory']=dataset;all_biomes.append(table)
+        print(dataset,info['comparison_counts'],info['assignment_status_counts'],flush=True)
     import matplotlib.pyplot as plt
     print('Generating inventory comparison figure...', flush=True)
     combined=pd.concat(all_biomes,ignore_index=True)

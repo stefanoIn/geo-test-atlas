@@ -16,18 +16,23 @@ def main():
     parser.add_argument("--exposure", type=Path, help="Existing exposure_summary.csv")
     parser.add_argument("--no-titles", action="store_true")
     parser.add_argument("--legend-loc", default="upper center")
-    parser.add_argument("--legend-columns", type=int, default=3)
+    parser.add_argument("--legend-columns", type=int, default=None)
     args = parser.parse_args()
     if args.enrichment is None and args.exposure is None:
         parser.error("Specify --enrichment and/or --exposure")
     options = dict(show_titles=not args.no_titles, legend_loc=args.legend_loc,
-                   legend_ncol=args.legend_columns)
+                   legend_ncol=args.legend_columns if args.legend_columns is not None else 3)
     if args.enrichment:
         biomes = []
         for folder in sorted((args.enrichment / "statistics").iterdir()):
             if not folder.is_dir():
                 continue
+            if folder.name == "stac" and (folder.parent / "sen1floods11").is_dir():
+                continue
             manifest = args.enrichment / "enriched" / f"{folder.name}_enriched.provenance.json"
+            if folder.name in {"stac", "sen1floods11"} and not manifest.is_file():
+                alternate = "sen1floods11" if folder.name == "stac" else "stac"
+                manifest = manifest.with_name(f"{alternate}_enriched.provenance.json")
             scope = "scope not recorded"
             if manifest.is_file():
                 scope = json.loads(manifest.read_text(encoding="utf-8"))["signature"]["inputs"]["scope"].replace("_", " ")
@@ -49,6 +54,7 @@ def main():
                                  args.enrichment / "figures/biome_comparison.pdf", **options)
         print("Category/comparison figures exported. Centre maps require saved coordinates and are not regenerated.")
     if args.exposure:
+        options["legend_ncol"] = args.legend_columns if args.legend_columns is not None else 4
         plot_exposure_summary(pd.read_csv(args.exposure), args.exposure.parent, **options)
         print("Exposure summary exported. Local maps require footprint geometries and are not regenerated.")
 

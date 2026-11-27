@@ -65,11 +65,14 @@ def plot_results(summary, maps, state, out, view_km, *, show_titles=True,
         ax.add_patch(Patch(np.asarray(state["target"].exterior.coords)/1000, fill=False, edgecolor="black", lw=2.5))
         row = summary[(summary.chip_id == state["chip"].sample_id) & (summary.pretraining_inventory == model)].iloc[0]
         if show_titles:
-            ax.set_title(f"({chr(97 + panel)}) {LABELS[model]}\n"
-                         f"Coverage {row.coverage_fraction:.1%} · nearest {row.nearest_footprint_km:.3f} km")
+            ax.set_title(f"({chr(97 + panel)}) {LABELS[model]}", pad=24)
+            ax.annotate(
+                f"Coverage {row.coverage_fraction:.1%} · nearest {row.nearest_footprint_km:.3f} km",
+                xy=(.5, 1), xycoords="axes fraction", xytext=(0, 5),
+                textcoords="offset points", ha="center", va="bottom", fontsize=9)
         ax.set(xlim=(-view_km, view_km), ylim=(-view_km, view_km), xlabel="East of chip centre (km)", aspect="equal")
-        ax.minorticks_off()
-        ax.grid(True, which="major")
+        ax.minorticks_on()
+        ax.grid(True, which="major", axis="both")
         ax.grid(False, which="minor")
         legend_handles.extend(
             Legend(facecolor=COLORS[s], edgecolor=COLORS[s], alpha=.5,
@@ -79,13 +82,14 @@ def plot_results(summary, maps, state, out, view_km, *, show_titles=True,
     axes[0].set_ylabel("North of chip centre (km)")
     legend_handles.append(Legend(facecolor="none", edgecolor="black", linewidth=2.5,
                                  label="Downstream footprint"))
-    fig.legend(handles=legend_handles, loc=legend_loc, bbox_to_anchor=(.5, 0),
+    fig.legend(handles=legend_handles, loc="lower center" if legend_loc == "best" else legend_loc,
+               bbox_to_anchor=(.5, 0),
                ncol=max(1, min(legend_ncol, len(legend_handles))), frameon=False)
     compact_legend_layout(fig)
     save_figure(fig, out/"local_exposure.png", bbox_inches="tight")
     plt.close(fig)
     plot_exposure_summary(summary, out, show_titles=show_titles,
-                          legend_loc=legend_loc, legend_ncol=legend_ncol)
+                          legend_loc=legend_loc)
 
 
 def self_test():

@@ -86,13 +86,21 @@ def plot_category(table, category, title, out, *, show_titles=True, figsize=None
     title = title.replace('stac_enriched', 'Sen1Floods11').replace('sen1floods11_enriched', 'Sen1Floods11')
     shown = table.head(20).iloc[::-1]
     fig, ax = plt.subplots(figsize=figsize or (7.2, max(3, .25 * len(shown))))
-    ax.barh(shown[category+'_name'], shown.fraction_all_records, color=shown[category+'_color'])
+    ax.barh(shown[category+'_name'], shown.fraction_all_records,
+            height=.7, color=shown[category+'_color'])
+    ax.margins(y=.04)
+    ax.tick_params(axis='y', which='both', left=False, right=False)
+    ax.tick_params(axis='x', top=False)
     ax.minorticks_off()
     ax.grid(False, axis='y', which='both')
     ax.grid(True, axis='x', which='major')
-    ax.set(xlabel='Fraction of all inventory records', title=f'{title}: {category} composition'+(' (top 20)' if len(table)>20 else ''))
-    if not show_titles:
-        ax.set_title('')
+    ax.set_xlabel('Fraction of all inventory records')
+    if show_titles:
+        ax.set_title(f'{category.capitalize()} composition' +
+                     (' (top 20)' if len(table) > 20 else ''), pad=24)
+        ax.annotate(title.replace('_', ' '), xy=(.5, 1), xycoords='axes fraction',
+                    xytext=(0, 5), textcoords='offset points',
+                    ha='center', va='bottom', fontsize=9)
     fig.tight_layout()
     save_figure(fig, Path(out)/f'{category}_distribution.pdf', bbox_inches='tight')
     plt.close(fig)
@@ -109,10 +117,12 @@ def plot_centres(points, title, out, *, show_titles=True, figsize=(7.2, 3.6)):
     fig, ax = plt.subplots(figsize=figsize)
     ax.scatter(points.loc[finite, 'center_lon'], points.loc[finite, 'center_lat'],
                s=3, c=colours[finite], alpha=.6, rasterized=True)
-    ax.set(xlim=(-180,180), ylim=(-90,90), xlabel='Longitude', ylabel='Latitude',
-           title=f'{title}: sampled centres ({len(points):,}); colour denotes biome')
-    if not show_titles:
-        ax.set_title('')
+    ax.set(xlim=(-180,180), ylim=(-90,90), xlabel='Longitude', ylabel='Latitude')
+    if show_titles:
+        ax.set_title('Sampled centres by biome', pad=24)
+        ax.annotate(f"{title.replace('_', ' ')} · {len(points):,} centres",
+                    xy=(.5, 1), xycoords='axes fraction', xytext=(0, 5),
+                    textcoords='offset points', ha='center', va='bottom', fontsize=9)
     ax.minorticks_on()
     ax.grid(True, which='major')
     ax.grid(False, which='minor')
@@ -128,7 +138,10 @@ def plot_biome_comparison(combined, output, *, show_titles=True, figsize=None,
     distribution = combined.pivot(index='biome_name', columns='inventory', values='fraction_all_records').fillna(0)
     fig, ax = plt.subplots(figsize=figsize or (7.2, max(4, .3*len(distribution))))
     distribution = distribution.rename(columns={'stac': 'Sen1Floods11', 'sen1floods11': 'Sen1Floods11'})
-    distribution.plot.barh(ax=ax)
+    distribution.plot.barh(ax=ax, width=.7)
+    ax.margins(y=.04)
+    ax.tick_params(axis='y', which='both', left=False, right=False)
+    ax.tick_params(axis='x', top=False)
     # Colour cycles repeat; hatches distinguish subsequent palette-sized groups.
     capacity = len(set(plt.rcParams['axes.prop_cycle'].by_key()['color']))
     hatches = ['', '//', '\\\\', '..', 'xx']
@@ -141,7 +154,8 @@ def plot_biome_comparison(combined, output, *, show_titles=True, figsize=None,
     ax.minorticks_off()
     ax.grid(False, axis='y', which='both')
     ax.grid(True, axis='x', which='major')
-    ax.legend(loc=legend_loc, bbox_to_anchor=(.5, -.12),
+    ax.legend(loc='lower center' if legend_loc == 'best' else legend_loc,
+              bbox_to_anchor=(.5, 0), frameon=False,
               ncol=max(1, min(legend_ncol, len(distribution.columns))))
     compact_legend_layout(fig)
     for extension in ('.pdf', '.png'):
@@ -157,7 +171,7 @@ def plot_biome_comparison(combined, output, *, show_titles=True, figsize=None,
 
 @scientific_style()
 def plot_exposure_summary(summary, out, *, show_titles=True, figsize=(9, 3.2),
-                          legend_loc='upper center', legend_ncol=3):
+                          legend_loc='upper center', legend_ncol=4):
     import matplotlib.pyplot as plt
     import numpy as np
     fig, axes = plt.subplots(1, 2, figsize=figsize)
@@ -167,9 +181,12 @@ def plot_exposure_summary(summary, out, *, show_titles=True, figsize=(9, 3.2),
                      marker="o" if len(x) == 1 else None, markersize=3,
                      label=EXPOSURE_LABELS.get(source, source.replace("_", " ")))
     grouped = summary.groupby("pretraining_inventory", sort=False).coverage_fraction.mean()
-    axes[0].bar(range(len(grouped)), grouped.values*100, color=[line.get_color() for line in axes[1].lines])
+    axes[0].bar(range(len(grouped)), grouped.values*100,
+                width=min(.72, .56 + .02 * len(grouped)),
+                color=[line.get_color() for line in axes[1].lines])
+    axes[0].set_xlim(-.65, max(0, len(grouped) - 1) + .65)
     axes[0].set_xticks(range(len(grouped)), [EXPOSURE_LABELS.get(s, s.replace("_", " ")).replace(" — ", "\n")
-                                                   for s in grouped.index], fontsize=8)
+                                                   for s in grouped.index])
     axes[0].set_ylabel("Mean downstream coverage (%)")
     axes[0].set_ylim(0, 100)
     axes[1].set(xlabel="Nearest footprint distance (km)", ylabel="Fraction of analysed chips", ylim=(0,1.05))
@@ -177,12 +194,14 @@ def plot_exposure_summary(summary, out, *, show_titles=True, figsize=(9, 3.2),
     axes[0].grid(False, axis="x", which="both")
     axes[0].grid(True, axis="y", which="major")
     axes[0].tick_params(axis="x", top=False)
-    axes[1].minorticks_off()
-    axes[1].grid(False, axis="x", which="both")
-    axes[1].grid(True, axis="y", which="major")
+    axes[1].minorticks_on()
+    axes[1].grid(True, axis="both", which="major")
     axes[1].grid(False, which="minor")
     handles, labels = axes[1].get_legend_handles_labels()
-    fig.legend(handles, labels, loc=legend_loc, bbox_to_anchor=(.5, 0),
+    labels = [label.replace(" — ", " (", 1) + ")" if " — " in label else label
+              for label in labels]
+    fig.legend(handles, labels, loc="lower center" if legend_loc == "best" else legend_loc,
+               bbox_to_anchor=(.5, 0),
                ncol=max(1, min(legend_ncol, len(handles))), frameon=False)
     if show_titles:
         axes[0].set_title("(a) Footprint coverage")
